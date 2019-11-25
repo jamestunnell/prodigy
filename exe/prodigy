@@ -22,57 +22,89 @@ Options:
   --tempo=<Te>    Beats per minute [default: 120].
   --key=<K>       Key signature [default: Cmaj].
   --meter=<T>     Time signature [default: 4/4].
+  --output=<O>    Output MIDI file [default: score.mid]
 
 DOCOPT
 
-def process_cmd_opts cmd_opts
-  # Make sure the key signature is valid
-  key_str = cmd_opts["--key"]
-  key = nil
-  begin
-    key = key_str.to_key
+class InvalidOptionValueError < StandardError; end
+
+class Options
+  attr_reader :key, :meter, :measures, :tempo, :output
+  def process(cmd_opts)
+    # Make sure the key signature is valid
+    key_str = cmd_opts["--key"]
+    key = nil
+    begin
+      key = key_str.to_key
+    end
+    if key.nil?
+      raise InvalidOptionValueError, "Key \"#{key_str}\" is not valid"
+    end
+
+    # Make sure the time signature is valid
+    meter_str = cmd_opts["--meter"]
+    meter = nil
+    begin
+      meter = meter_str.to_meter
+    end
+    if meter.nil?
+      raise InvalidOptionValueError, "Meter \"#{meter_str}\" is not valid"
+    end
+
+    # Make sure the number of measures is valid
+    measures_str = cmd_opts["--measures"]
+    measures = measures_str.to_i
+    if measures <= 0
+      raise InvalidOptionValueError, "Measures #{measures_str} must be a positive integer"
+    end
+
+    # Make sure the tempo is valid
+    tempo_str = cmd_opts["--tempo"]
+    tempo = tempo_str.to_i
+    if tempo <= 0
+      raise InvalidOptionValueError, "Tempo #{tempo_str} must be a positive integer"
+    end
+
+    # Make sure the tempo is valid
+    output_str = cmd_opts["--output"]
+    unless File.extname(output_str) == ".mid"
+      raise InvalidOptionValueError, "Output file #{output_str} must end with .mid"
+    end
+
+    @key = key
+    @meter = meter
+    @measures = measures
+    @tempo = tempo
+    @output = output_str
   end
-  raise InvalidOptionValueError, "Key \"#{key_str}\" is not valid" if key.nil?
-
-  # Make sure the time signature is valid
-  meter_str = cmd_opts["--meter"]
-  meter = nil
-  begin
-    meter = meter_str.to_meter
-  end
-  raise InvalidOptionValueError, "Meter \"#{meter_str}\" is not valid" if meter.nil?
-
-  # Make sure the number of measures is valid
-  measures_str = cmd_opts["--measures"]
-  measures = measures_str.to_i
-  raise InvalidOptionValueError, "Measures #{measures_str} must be a positive integer" if measures <= 0
-
-  # Make sure the tempo is valid
-  tempo_str = cmd_opts["--tempo"]
-  tempo = tempo_str.to_i
-  raise InvalidOptionValueError, "Tempo #{tempo_str} must be a positive integer" if tempo <= 0
-
-  return :key => key, :meter => meter, :measures => measures, :tempo => tempo
 end
 
-opts = {}
 begin
   cmd_opts = Docopt::docopt(DOC, :help => true, :version => Prodigy::VERSION)
-  opts = process_cmd_opts(cmd_opts)
-  puts opts
-  notes = Prodigy::Composer.new(opts[:key], opts[:meter]).compose(opts[:measures])
+  opts = Options.new
+  opts.process(cmd_opts)
+
+  print "Composing #{opts.measures} measures..."
+  notes = Prodigy::Composer.new(opts.key, opts.meter).compose(opts.measures)
+  puts notes[0].class
   part = Part.new(Dynamics::F, notes: notes)
-  score = Score::Tempo.new(opts[:tempo], parts: {"piano" => part})
+  score = Score::Tempo.new(opts.tempo, start_meter: opts.meter,
+    start_key: opts.key, parts: {"piano" => part})
+  puts "done"
+
+  print "Converting to timed score..."
+  score = score.to_timed(40)
+  puts "done"
 
   print "Making MIDI sequence..."
   sequencer = ScoreSequencer.new(score)
   sequence = sequencer.make_midi_seq()
+  puts "done"
 
-  print "Writing MIDI file '#{fout_name}'..."
-  File.open('score.mid', 'wb'){ |fout| sequence.write(fout) }
+  print "Writing MIDI file 'score.mid'..."
+  File.open(opts.output, 'wb'){ |fout| sequence.write(fout) }
+  puts "done"
 
 rescue Docopt::Exit => e
   puts e.message
 end
-
-class InvalidOptionValueError < StandardError; end

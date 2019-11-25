@@ -47,7 +47,7 @@ class Composer
     measure_count.times do |i|
       rhythm = @high_level_rhythms.sample
       new_notes = rhythm.durations.map {|dur| Musicality::Note.new(dur, scale_pitches.sample) }
-      notes.push new_notes
+      notes += new_notes
     end
 
     return notes
